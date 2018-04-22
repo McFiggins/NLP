@@ -1,3 +1,4 @@
+# some downloading of tweets
 setup_twitter_oauth(consumer_key, consumer_secret, access_token, access_secret)
 tw = twitteR::searchTwitter("#metoo", n = 2000, since = '2017-01-01', retryOnRateLimit = 1e3)
 d = twitteR::twListToDF(tw)
@@ -28,3 +29,160 @@ clean_corpus <- function(cleaned_corpus){
 
 # run the corpus trough a cleaning function and clean the corpus
 cleaned_review_corpus <- clean_corpus(review_corpus)
+
+# create a dtm
+TDM_tw <- TermDocumentMatrix(cleaned_review_corpus)
+TDM_tw_m <- as.matrix(TDM_tw)
+
+
+# Term Frequency
+term_frequency <- rowSums(TDM_tw_m)
+# term_frequency in descending order
+term_frequency <- sort(term_frequency,dec=TRUE)
+# top 20 most common words
+top10 <- term_frequency[1:20]
+# Plot a barchart of the 20 most common words
+barplot(top10,col="darkorange",las=2)
+
+
+# look at more visuals of the dtm of words. Here is a unigram wordcloud
+term_frequency[1:10]
+# Create word_freqs
+word_freqs <- data.frame(term = names(term_frequency), num = term_frequency)
+# Create a wordcloud for the values in word_freqs
+wordcloud(word_freqs$term, word_freqs$num,min.freq = 5, random.order = FALSE, max.words = 100, colors = brewer.pal(8, "Paired"))
+
+# use a function to create bi-grams
+tokenizer <- function(x)
+  NGramTokenizer(x, Weka_control(min = 2,max = 2))
+
+bigram_tdm <- TermDocumentMatrix(cleaned_review_corpus,control = list(tokenize=tokenizer))
+bigram_tdm_m <- as.matrix(bigram_tdm)
+
+# Term Frequency
+term_frequency <- rowSums(bigram_tdm_m)
+# Sort term_frequency in descending order
+term_frequency <- sort(term_frequency,dec=TRUE)
+############Word Cloud
+# Create word_freqs
+word_freqs <- data.frame(term = names(term_frequency), num = term_frequency)
+# Create a wordcloud for the values in word_freqs
+wordcloud(word_freqs$term,
+          scale = c(3,0.05),
+          word_freqs$num, 
+          random.order = FALSE, 
+          random.color = TRUE,
+          min.freq = 5, 
+          max.words = 100, 
+          colors = brewer.pal(12, "Paired"))
+
+# use a function to create trigrams
+tokenizer <- function(x)
+  NGramTokenizer(x, Weka_control(min = 3,max = 3))
+
+trigram_tdm <- TermDocumentMatrix(cleaned_review_corpus,control = list(tokenize=tokenizer))
+trigram_tdm_m <- as.matrix(trigram_tdm)
+
+# Term Frequency
+term_frequency <- rowSums(trigram_tdm_m)
+# Sort term_frequency in descending order
+term_frequency <- sort(term_frequency,dec = TRUE)
+############Word Cloud
+# Create word_freqs
+word_freqs <- data.frame(term = names(term_frequency), num = term_frequency)
+# Create a wordcloud for the values in word_freqs
+wordcloud(word_freqs$term, 
+          word_freqs$num, 
+          scale = c(2,0.05),
+          random.order = FALSE, 
+          random.color = TRUE,
+          min.freq = 3, 
+          max.words = 200, 
+          colors = brewer.pal(15, "Dark2"))
+
+# here is the TD-IDF word cloud
+tfidf_tdm <- TermDocumentMatrix(cleaned_review_corpus,control=list(weighting=weightTfIdf))
+tfidf_tdm_m <- as.matrix(tfidf_tdm)
+
+# Term Frequency
+term_frequency <- rowSums(tfidf_tdm_m)
+# Sort term_frequency in descending order
+term_frequency <- sort(term_frequency,dec=TRUE)
+############Word Cloud
+# Create word_freqs
+word_freqs <- data.frame(term = names(term_frequency), num = term_frequency)
+# Create a wordcloud for the values in word_freqs
+wordcloud(word_freqs$term, 
+          word_freqs$num, 
+          scale = c(4,0.3),
+          random.order = FALSE,
+          min.freq = 4, 
+          max.words = 500, 
+          colors = brewer.pal(9, "Accent"))
+
+# sentimet analysis of the 2000 tweets
+# USe a tidy DTM for sentiment analysis
+TDM_tw_tidy = tidy(TDM_tw)
+
+polarity(cleaned_review_corpus)
+
+(sentiment_text<- polarity(TDM_tw_tidy))
+
+# counts
+(text_counts <- counts(sentiment_text))
+
+# Number of positive words
+(n_good <- length(text_counts$pos.words[[1]]))
+
+# number of negative words
+(n_bad <- length(text_counts$neg.words[[1]]))
+
+# total word count
+(n_words <- text_counts$wc)
+
+# polarity score
+n_good / sqrt(n_words)
+
+nrc_lex <- get_sentiments("nrc")
+nrc_lex_pos_neg <- nrc_lex[nrc_lex$sentiment %in% c("positive","negative"),]
+mytext_nrc_lex <- inner_join(TDM_tw_tidy, nrc_lex_pos_neg, by = c("term" = "word"))
+mytext_nrc_lex$sentiment_n <- ifelse(mytext_nrc_lex$sentiment == "negative", -1, 1)
+mytext_nrc_lex$sentiment_value <- mytext_nrc_lex$sentiment_n * mytext_nrc_lex$count
+nrc_aggdata <- aggregate(mytext_nrc_lex$sentiment_value, list(index = mytext_nrc_lex$document), sum)
+nrc_aggdata$index <- as.numeric(nrc_aggdata$index)
+colnames(nrc_aggdata) <- c("index","nrc_score")
+View(nrc_aggdata)
+
+# commonality and comparison clouds
+# comparison
+TDM_tw_tidy %>%
+  inner_join(get_sentiments("nrc"), by = c("term" = "word")) %>%
+  count(term, sentiment, sort = TRUE) %>%
+  acast(term ~ sentiment, value.var = "n", fill = 5) %>%
+  comparison.cloud(colors = brewer.pal(8, "Dark2"), 
+                   scale = c(3,0.3),
+                   max.words=1000)
+
+# commonality
+TDM_tw_tidy %>%
+  inner_join(get_sentiments("nrc"), by = c("term" = "word")) %>%
+  count(term, sentiment, sort = TRUE) %>%
+  acast(term ~ sentiment, value.var = "n", fill = 10) %>%
+  commonality.cloud(colors = brewer.pal(20, "Dark2"), 
+                    scale = c(3,0.1),
+                    max.words=1000)
+
+# here is the emotional analysis. Mostly we see anger, trust, and fear being the most prominent emotions.
+# It appears as though there is a lot which is all over the place as well and emtions trickle into anticipation,
+# sadness,joy, and surprise.
+nrc_lex <- get_sentiments("nrc")
+story_nrc <- inner_join(TDM_tw_tidy, nrc_lex, by = c("term" = "word"))
+story_nrc_noposneg <- story_nrc[!(story_nrc$sentiment %in% c("positive","negative")),]
+aggdata <- aggregate(story_nrc_noposneg$count, list(index = story_nrc_noposneg$sentiment), sum)
+View(aggdata)
+
+# here is a look at the sentiment. We can see that fear is the most prominent
+ggplot(aggdata, aes(index, x)) + geom_point(color = "red") + theme_bw() + xlab("tweet") + ylab("sentiment") + ggtitle("MeToo Sentiment")
+
+# another graph of the sentiment
+chartJSRadar(aggdata)
